@@ -15,8 +15,8 @@ st.set_page_config(
 # 스타일 정의
 STYLES = {
     "lego": {"name": "🧱 레고 (Lego)", "desc": "레고 블럭으로 만든 세상"},
-    "anime": {"name": "🎨 애니메이션 (Anime)", "desc": "지브리 스타일 애니메이션"},
-    "pixel": {"name": "🎮 픽셀아트 (Pixel)", "desc": "레트로 8비트 게임 스타일"},
+    "anime": {"name": "🎨 애니메이션 (Anime)", "desc": "일본 애니메이션 스타일"},
+    "pixel": {"name": "🎮 픽셀아트 (Pixel)", "desc": "레트로 게임 스타일"},
     "clay": {"name": "🪴 클레이 (Clay)", "desc": "귀여운 클레이 피규어"},
     "business": {"name": "👔 비즈니스 (Business)", "desc": "세련된 스튜디오 프로필 사진"},
     "figure": {"name": "🧸 피규어 (Figure)", "desc": "책상 위 수집용 피규어"},
