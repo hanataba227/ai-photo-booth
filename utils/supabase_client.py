@@ -1,5 +1,4 @@
 import os
-import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime
@@ -10,22 +9,27 @@ load_dotenv()
 # Supabase 클라이언트 초기화
 def init_supabase() -> Client:
     try:
-        # Streamlit secrets에서 먼저 로드 시도 (배포용)
-        if hasattr(st, "secrets") and "supabase" in st.secrets:
-            url = st.secrets["supabase"]["url"]
-            key = st.secrets["supabase"]["key"]
-        else:
-            # 환경 변수에서 로드 (로컬 개발용)
-            url = os.getenv("SUPABASE_URL")
-            key = os.getenv("SUPABASE_KEY")
+        # 먼저 환경 변수에서 로드 (로컬 개발용)
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        
+        # Streamlit secrets 체크 (배포용) - lazy import로 set_page_config 이전 실행 방지
+        if not url or not key:
+            try:
+                import streamlit as st
+                if hasattr(st, "secrets") and "supabase" in st.secrets:
+                    url = st.secrets["supabase"]["url"]
+                    key = st.secrets["supabase"]["key"]
+            except:
+                pass
 
         if not url or not key:
-            raise ValueError("Supabase URL 또는 Key가 누락되었습니다.")
+            raise ValueError("Supabase URL 또는 Key가 누락되었습니다. .env 파일을 확인하세요.")
 
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Supabase 초기화 실패: {str(e)}")
-        return None
+        print(f"Supabase 초기화 실패: {str(e)}")
+        raise e
 
 supabase = init_supabase()
 
@@ -59,12 +63,26 @@ def get_image_url(bucket_name: str, file_path: str) -> str:
 def create_booth_request(style_type: str, input_image_path: str) -> dict:
     """
     booth_requests 테이블에 새 레코드를 생성합니다.
+    순번(queue_number)을 자동으로 할당합니다.
     """
     try:
+        # 현재 최대 순번 조회 (오늘 날짜 기준 또는 전체)
+        response = supabase.table("booth_requests")\
+            .select("queue_number")\
+            .order("queue_number", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        # 다음 순번 계산
+        next_number = 0
+        if response.data and len(response.data) > 0 and response.data[0].get("queue_number") is not None:
+            next_number = response.data[0]["queue_number"] + 1
+        
         data = {
             "style_type": style_type,
-            "input_image_url": input_image_path, # 현재는 경로 저장
-            "status": "pending"
+            "input_image_url": input_image_path,
+            "status": "pending",
+            "queue_number": next_number
         }
         response = supabase.table("booth_requests").insert(data).execute()
         if response.data:

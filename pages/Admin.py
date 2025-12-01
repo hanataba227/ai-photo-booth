@@ -1,4 +1,7 @@
+# 페이지 설정 (반드시 첫 번째로 호출)
 import streamlit as st
+st.set_page_config(page_title="Admin Dashboard - COM-ART", page_icon="🛠️", layout="wide")
+
 from streamlit_autorefresh import st_autorefresh
 from utils.supabase_client import (
     get_pending_requests,
@@ -16,18 +19,21 @@ from PIL import Image
 import io
 import time
 
-# 페이지 설정
-st.set_page_config(page_title="Admin Dashboard - COM-ART", page_icon="🛠️", layout="wide")
-
 # 세션 상태 초기화
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
 
 # 관리자 비밀번호 확인
 ADMIN_PASSWORD = None
-if hasattr(st, "secrets") and "general" in st.secrets and "admin_password" in st.secrets["general"]:
-    ADMIN_PASSWORD = st.secrets["general"]["admin_password"]
-else:
+try:
+    # Streamlit secrets에서 시도 (배포용)
+    if hasattr(st, "secrets") and "general" in st.secrets and "admin_password" in st.secrets["general"]:
+        ADMIN_PASSWORD = st.secrets["general"]["admin_password"]
+except:
+    pass
+
+# secrets에서 로드 실패 시 환경 변수 사용
+if not ADMIN_PASSWORD:
     import os
     from dotenv import load_dotenv
     load_dotenv()
@@ -53,7 +59,6 @@ if not st.session_state.admin_authenticated:
                 else:
                     st.error("❌ 비밀번호가 올바르지 않습니다.")
     
-    st.info("💡 기본 비밀번호는 `admin123` 입니다. `.streamlit/secrets.toml` 또는 `.env`에서 변경할 수 있습니다.")
     st.stop()
 
 # 자동 새로고침 (작업 중이 아닐 때만)
@@ -96,10 +101,11 @@ with col1:
     else:
         # 대기열 리스트 표시
         for req in pending_requests:
+            queue_num = req.get('queue_number', 0)
             with st.container(border=True):
                 c1, c2, c3 = st.columns([3, 1, 1])
                 with c1:
-                    st.markdown(f"**ID:** `{req['id'].split('-')[0]}...`")
+                    st.markdown(f"**번호:** `{queue_num:03d}`")
                     st.markdown(f"**스타일:** `{req['style_type']}`")
                     st.caption(f"요청 시간: {req['created_at']}")
                 with c2:
