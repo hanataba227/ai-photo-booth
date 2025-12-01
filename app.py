@@ -24,9 +24,8 @@ STYLES = {
 
 def main():
     # 헤더 섹션
-    st.title("🎨 COM-ART AI Photo Booth")
+    st.title("🎨 AI 인생네컷")
     st.markdown("### 나만의 특별한 AI 사진을 만들어보세요!")
-    st.info("👋 부스에서 제공한 QR 코드로 접속하셨습니다. 사진을 업로드하고 스타일을 선택해주세요.")
 
     # 1. 이미지 업로드
     st.markdown("#### 1. 사진 업로드")
@@ -92,13 +91,18 @@ def main():
                         st.success("✅ 요청이 성공적으로 등록되었습니다!")
                         st.balloons()
                         
+                        # 대기 번호 포맷팅
+                        queue_num = request_data.get('queue_number', 0)
+                        
                         # 결과 안내
                         st.markdown(f"""
-                        <div style="padding: 20px; background-color: #f0f2f6; border-radius: 10px; margin-top: 20px;">
-                            <h4>🎫 대기 번호가 발급되었습니다</h4>
-                            <p>부스 앞에서 잠시만 기다려주세요.</p>
-                            <p>곧 멋진 AI 이미지를 받아보실 수 있습니다!</p>
-                            <p style="font-size: 0.8em; color: #666;">요청 ID: {request_data['id']}</p>
+                        <div style="padding: 30px; background-color: #f0f2f6; border-radius: 10px; margin-top: 20px; text-align: center;">
+                            <h3>🎫 대기 번호</h3>
+                            <div style="font-size: 72px; font-weight: bold; color: #FF4B4B; margin: 20px 0;">
+                                {queue_num:03d}
+                            </div>
+                            <p style="font-size: 18px; margin-top: 20px;">부스 앞에서 잠시만 기다려주세요.</p>
+                            <p style="font-size: 16px;">곧 멋진 AI 이미지를 받아보실 수 있습니다!</p>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
@@ -114,7 +118,6 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; font-size: 0.8em;'>
-        © 2025 COM-ART. All rights reserved.<br>
         Mokwon Univ. Computer Engineering
         </div>
         """, 
