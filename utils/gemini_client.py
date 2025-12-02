@@ -1,6 +1,5 @@
 import os
 import google.generativeai as genai
-import streamlit as st
 from dotenv import load_dotenv
 from PIL import Image
 
@@ -9,38 +8,21 @@ load_dotenv()
 
 # Gemini API 설정
 def configure_gemini():
-    try:
-        if hasattr(st, "secrets") and "gemini" in st.secrets:
-            # secrets.toml에서 api_key 또는 GEMINI_API_KEY 모두 지원
-            api_key = st.secrets["gemini"].get("api_key") or st.secrets["gemini"].get("GEMINI_API_KEY")
-        else:
-            api_key = os.getenv("GEMINI_API_KEY")
-            
-        if not api_key:
-            raise ValueError("Gemini API Key가 누락되었습니다.")
-            
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        print(f"Gemini 설정 실패: {str(e)}")
-        return False
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("Gemini API Key가 누락되었습니다. .env 파일을 확인하세요.")
+    
+    genai.configure(api_key=api_key)
+    return True
 
-# Streamlit 컨텍스트가 있을 때만 설정
+# 초기 설정
 try:
     configure_gemini()
-except:
-    pass  # 테스트 환경에서는 무시
+except Exception as e:
+    print(f"Gemini 설정 실패: {str(e)}")
 
 # 모델 설정
-def get_model_name():
-    if hasattr(st, "secrets") and "gemini" in st.secrets and "model" in st.secrets["gemini"]:
-        return st.secrets["gemini"]["model"]
-    return os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image")
-
-try:
-    MODEL_NAME = get_model_name()
-except:
-    MODEL_NAME = "gemini-2.5-flash-image"
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image")
 
 GENERATION_CONFIG = {
     "temperature": 0.7,
