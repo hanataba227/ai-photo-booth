@@ -179,9 +179,7 @@ with col2:
                             "url": public_url,
                             "req": req
                         }
-                        # 작업 완료 후 선택 해제
-                        if 'selected_request' in st.session_state:
-                            del st.session_state.selected_request
+                        # 작업 완료 후에도 selected_request는 유지 (삭제 버튼으로만 제거)
                         st.rerun()
                         
                     except Exception as e:
