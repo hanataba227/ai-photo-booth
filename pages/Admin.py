@@ -23,21 +23,11 @@ import time
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
 
-# 관리자 비밀번호 확인
-ADMIN_PASSWORD = None
-try:
-    # Streamlit secrets에서 시도 (배포용)
-    if hasattr(st, "secrets") and "general" in st.secrets and "admin_password" in st.secrets["general"]:
-        ADMIN_PASSWORD = st.secrets["general"]["admin_password"]
-except:
-    pass
-
-# secrets에서 로드 실패 시 환경 변수 사용
-if not ADMIN_PASSWORD:
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # 기본값
+# 관리자 비밀번호 확인 (.env 파일에서만 로드)
+import os
+from dotenv import load_dotenv
+load_dotenv()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # 기본값
 
 # 로그인 페이지
 if not st.session_state.admin_authenticated:
@@ -127,8 +117,6 @@ with col2:
     
     if 'selected_request' in st.session_state:
         req = st.session_state.selected_request
-        
-        st.info(f"현재 처리 중인 요청: {req['id']}")
         
         # 1. 원본 이미지 로드
         try:
