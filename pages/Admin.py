@@ -5,6 +5,7 @@ st.set_page_config(page_title="Admin Dashboard - COM-ART", page_icon="🛠️", 
 from streamlit_autorefresh import st_autorefresh
 from utils.supabase_client import (
     get_pending_requests,
+    get_all_active_requests,
     update_request_status,
     download_image,
     upload_image,
@@ -12,8 +13,8 @@ from utils.supabase_client import (
     delete_request,
     supabase
 )
-from utils.gemini_client import generate_styled_image
-from utils.image_processor import process_image_for_print, image_to_bytes
+from utils.gemini_client import generate_styled_image, generate_multiple_styles_sync
+from utils.image_processor import process_image_for_print, image_to_bytes, create_four_cut_template
 from utils.qr_generator import generate_qr_code
 from PIL import Image
 import io
@@ -73,8 +74,11 @@ with st.sidebar:
     
     # 통계 (간단한 카운트)
     try:
-        pending_reqs = get_pending_requests()
-        st.metric("대기 중인 요청", len(pending_reqs))
+        active_reqs = get_all_active_requests()
+        pending_count = len([r for r in active_reqs if r['status'] == 'pending'])
+        completed_count = len([r for r in active_reqs if r['status'] == 'completed'])
+        st.metric("대기 중", pending_count)
+        st.metric("완료됨", completed_count)
     except Exception as e:
         st.error(f"통계 오류: {e}")
 
@@ -82,25 +86,61 @@ with st.sidebar:
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader("📋 대기열 (Pending Queue)")
+    st.subheader("📋 대기열 (Queue)")
     
-    pending_requests = get_pending_requests()
+    all_requests = get_all_active_requests()
     
-    if not pending_requests:
-        st.info("대기 중인 요청이 없습니다.")
+    if not all_requests:
+        st.info("요청이 없습니다.")
     else:
         # 대기열 리스트 표시
-        for req in pending_requests:
+        for req in all_requests:
             queue_num = req.get('queue_number', 0)
+            status = req.get('status', 'pending')
+            
+            # 상태별 표시
+            if status == 'completed':
+                border_color = "border: 2px solid #00cc00;"
+                status_emoji = "✅"
+            elif status == 'processing':
+                border_color = "border: 2px solid #ffaa00;"
+                status_emoji = "⏳"
+            else:  # pending
+                border_color = ""
+                status_emoji = "⏸️"
+            
             with st.container(border=True):
                 c1, c2, c3 = st.columns([3, 1, 1])
                 with c1:
-                    st.markdown(f"**번호:** `{queue_num:03d}`")
-                    st.markdown(f"**스타일:** `{req['style_type']}`")
-                    st.caption(f"요청 시간: {req['created_at']}")
+                    st.markdown(f"{status_emoji} **번호:** `{queue_num:03d}`")
+                    
+                    # 4-cut 요청인지 확인
+                    if req.get('style_types') and isinstance(req['style_types'], list):
+                        styles = " → ".join(req['style_types'])
+                        st.markdown(f"**스타일:** `[4컷] {styles}`")
+                    else:
+                        st.markdown(f"**스타일:** `{req['style_type']}`")
+                    
+                    st.caption(f"상태: {status} | 요청 시간: {req['created_at']}")
                 with c2:
-                    if st.button("처리", key=f"btn_{req['id']}", use_container_width=True):
+                    button_label = "확인" if status == 'completed' else "처리"
+                    if st.button(button_label, key=f"btn_{req['id']}", use_container_width=True):
                         st.session_state.selected_request = req
+                        # 완료된 요청인 경우 결과를 바로 로드
+                        if status == 'completed' and req.get('output_image_url'):
+                            try:
+                                output_data = download_image("output_images", req['output_image_url'])
+                                output_image = Image.open(io.BytesIO(output_data))
+                                is_four_cut = req.get('style_types') is not None and isinstance(req['style_types'], list)
+                                st.session_state.generated_result = {
+                                    "image": output_image,
+                                    "url": get_image_url("output_images", req['output_image_url']),
+                                    "req": req,
+                                    "is_four_cut": is_four_cut
+                                }
+                            except Exception as e:
+                                st.error(f"결과 이미지 로드 실패: {e}")
+                        st.rerun()
                 with c3:
                     if st.button("🗑️", key=f"del_{req['id']}", use_container_width=True, help="삭제"):
                         try:
@@ -115,7 +155,11 @@ with col1:
 with col2:
     st.subheader("🎨 작업 스테이션")
     
-    if 'selected_request' in st.session_state:
+    # 결과가 있으면 결과 먼저 표시
+    if 'generated_result' in st.session_state:
+        # 결과 표시 섹션으로 건너뜀 (아래에서 처리)
+        pass
+    elif 'selected_request' in st.session_state:
         req = st.session_state.selected_request
         
         # 1. 원본 이미지 로드
@@ -128,11 +172,23 @@ with col2:
             with c1:
                 st.image(original_image, caption="원본 이미지", use_column_width=True)
             with c2:
-                st.markdown(f"### 선택된 스타일: **{req['style_type']}**")
+                # 4-cut 요청인지 확인
+                is_four_cut = req.get('style_types') is not None and isinstance(req['style_types'], list)
+                
+                if is_four_cut:
+                    style_types = req['style_types']
+                    st.markdown(f"### 4컷 요청 (스타일: {len(style_types)}개)")
+                    styles_display = " → ".join(style_types)
+                    st.info(f"📸 {styles_display}")
+                else:
+                    st.markdown(f"### 단일 스타일: **{req['style_type']}**")
+                
                 st.markdown("AI 생성을 시작하려면 아래 버튼을 누르세요.")
                 
                 # 2. 생성 버튼
-                if st.button("✨ AI 이미지 생성 시작", type="primary", use_container_width=True):
+                button_label = "✨ 4컷 이미지 생성 시작" if is_four_cut else "✨ AI 이미지 생성 시작"
+                
+                if st.button(button_label, type="primary", use_container_width=True):
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
@@ -140,17 +196,49 @@ with col2:
                         # 상태 업데이트: Processing
                         status_text.text("상태 업데이트 중...")
                         update_request_status(req['id'], "processing")
-                        progress_bar.progress(10)
+                        progress_bar.progress(5)
                         
-                        # 이미지 생성
-                        status_text.text(f"{req['style_type']} 스타일로 생성 중... (약 30초 소요)")
-                        generated_image = generate_styled_image(original_image, req['style_type'])
-                        progress_bar.progress(60)
-                        
-                        # 이미지 후처리 (리사이징/크롭)
-                        status_text.text("인쇄용 규격(4x6인치, 1200x1800px)으로 변환 중...")
-                        final_image = process_image_for_print(generated_image)
-                        progress_bar.progress(70)
+                        if is_four_cut:
+                            # === 4-CUT 모드 ===
+                            status_text.text(f"4개 스타일 동시 생성 시작... (약 30-60초 소요)")
+                            
+                            # 병렬 생성
+                            results = generate_multiple_styles_sync(original_image, style_types, max_retries=3)
+                            progress_bar.progress(60)
+                            
+                            # 성공/실패 분류
+                            generated_images = []
+                            failed_styles = []
+                            
+                            for style in style_types:
+                                img, error = results.get(style, (None, None))
+                                if img is not None:
+                                    generated_images.append(img)
+                                    st.success(f"✅ {style} 생성 완료")
+                                else:
+                                    failed_styles.append(style)
+                                    st.error(f"❌ {style} 생성 실패: {str(error)[:100] if error else '알 수 없는 오류'}")
+                            
+                            # 성공 개수 확인
+                            if len(generated_images) != 4:
+                                st.error(f"⚠️ {len(generated_images)}/4 개만 생성 완료. 실패한 스타일: {', '.join(failed_styles)}")
+                                raise Exception(f"4개 중 {len(generated_images)}개만 생성됨")
+                            
+                            # 4개 모두 성공: 템플릿 생성
+                            status_text.text("4컷 템플릿 생성 중...")
+                            final_image = create_four_cut_template(generated_images)
+                            progress_bar.progress(70)
+                            
+                        else:
+                            # === 기존 단일 스타일 모드 ===
+                            status_text.text(f"{req['style_type']} 스타일로 생성 중... (약 30초 소요)")
+                            generated_image = generate_styled_image(original_image, req['style_type'])
+                            progress_bar.progress(60)
+                            
+                            # 이미지 후처리 (리사이징/크롭)
+                            status_text.text("인쇄용 규격으로 변환 중...")
+                            final_image = process_image_for_print(generated_image)
+                            progress_bar.progress(70)
                         
                         # 결과 업로드
                         status_text.text("결과 이미지 업로드 중...")
@@ -166,18 +254,23 @@ with col2:
                         public_url = get_image_url("output_images", output_path)
                         print(f"🔗 공개 URL 생성: {public_url}")
                         
-                        # DB 업데이트: Completed
-                        status_text.text("최종 완료 처리 중...")
-                        update_request_status(req['id'], "completed", output_url=public_url)
+                        # DB 업데이트: 파일 경로만 저장, 상태는 processing 유지
+                        status_text.text("결과 저장 중...")
+                        # 상태는 "완료" 버튼을 눌러야만 completed로 변경
+                        response = supabase.table('booth_requests').update({
+                            'output_image_url': output_path
+                        }).eq('id', req['id']).execute()
                         progress_bar.progress(100)
                         
-                        st.success("✅ 생성이 완료되었습니다!")
+                        mode_text = "4컷 이미지" if is_four_cut else "이미지"
+                        st.success(f"✅ {mode_text} 생성이 완료되었습니다!")
                         
-                        # 결과를 세션 상태에 저장
+                        # 결과를 세션 상태에 저장 (URL은 공개 URL 사용)
                         st.session_state.generated_result = {
                             "image": final_image,
                             "url": public_url,
-                            "req": req
+                            "req": req,
+                            "is_four_cut": is_four_cut
                         }
                         # 작업 완료 후에도 selected_request는 유지 (삭제 버튼으로만 제거)
                         st.rerun()
@@ -194,12 +287,15 @@ with col2:
         res = st.session_state.generated_result
         
         st.divider()
-        st.subheader("✅ 최종 결과 확인")
+        is_four_cut = res.get('is_four_cut', False)
+        title = "✅ 최종 4컷 결과 확인" if is_four_cut else "✅ 최종 결과 확인"
+        st.subheader(title)
         
         r_col1, r_col2 = st.columns([1, 1])
         
         with r_col1:
-            st.image(res['image'], caption="최종 결과물 (4x6인치)", use_column_width=True)
+            caption = "최종 결과물 (4컷 템플릿)" if is_four_cut else "최종 결과물 (4x6인치)"
+            st.image(res['image'], caption=caption, use_column_width=True)
             
         with r_col2:
             st.markdown("#### 📱 다운로드용 QR 코드")
@@ -209,18 +305,22 @@ with col2:
             
             st.markdown(f"🔗 [이미지 직접 다운로드]({res['url']})")
             
-            st.info("🖨️ **인쇄 방법**: 브라우저 인쇄 기능(Ctrl+P)을 사용하세요. 인쇄 설정에서 용지 크기를 4x6인치로 설정해야 합니다.")
-        
         # 버튼은 컬럼 밖에 배치
         col_done1, col_done2 = st.columns(2)
         with col_done1:
-            if st.button("✅ 완료", type="primary", use_container_width=True):
-                # 세션 상태 초기화
-                del st.session_state.generated_result
-                if 'selected_request' in st.session_state:
-                    del st.session_state.selected_request
-                st.success("작업 완료! 대기열로 돌아갑니다.")
-                st.rerun()
+            if st.button("✅ 완료 표시", type="primary", use_container_width=True):
+                # 상태를 completed로 변경 (대기열에는 계속 표시)
+                try:
+                    # DB에는 파일 경로만 저장되어 있으므로 그대로 유지
+                    update_request_status(res['req']['id'], "completed", output_url=res['req'].get('output_image_url'))
+                    # 세션 상태 초기화
+                    del st.session_state.generated_result
+                    if 'selected_request' in st.session_state:
+                        del st.session_state.selected_request
+                    st.success("완료 표시되었습니다! 대기열에서 ✅로 표시됩니다.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"완료 처리 실패: {e}")
         with col_done2:
             if st.button("🗑️ 요청 삭제", use_container_width=True):
                 try:

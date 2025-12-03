@@ -90,13 +90,17 @@ CRITICAL: Generate in 2:3 PORTRAIT aspect ratio (taller than wide).
 
     "figure": """Create hyper-realistic collectible figure product photo.
 CRITICAL: Generate in 2:3 PORTRAIT aspect ratio (taller than wide).
+CRITICAL: Show COMPLETE FULL BODY from head to toe, no cropping of legs or feet.
 - Person as detailed collectible figure/statue
+- FULL BODY visible: head, torso, legs, and feet completely shown
+- Standing pose with proper proportions
 - Placed on computer desk or shelf
 - Retail box visible in background
-- Product photography lighting
+- Product photography lighting with proper distance
 - Realistic shadows and reflections
 - Fine details (texture, paint, joints)
 - Depth of field (figure focused)
+- Camera positioned to capture entire figure
 - Desk items for scale
 - Maintain character likeness in figure form"""
 }
@@ -170,3 +174,91 @@ Important: Generate a complete new image, not text description."""
         import traceback
         traceback.print_exc()
         raise e
+
+
+# 4-cut 기능을 위한 병렬 생성 함수
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Tuple, Optional
+
+async def generate_multiple_styles_async(
+    input_image: Image.Image, 
+    style_types: List[str],
+    max_retries: int = 3
+) -> Dict[str, Tuple[Optional[Image.Image], Optional[Exception]]]:
+    """
+    여러 스타일의 이미지를 동시에 생성합니다 (asyncio + ThreadPoolExecutor 사용).
+    
+    Args:
+        input_image: 입력 이미지
+        style_types: 생성할 스타일 타입 리스트 (예: ["lego", "anime", "pixel", "clay"])
+        max_retries: 실패 시 재시도 횟수
+    
+    Returns:
+        Dict[style_type, (generated_image or None, error or None)]
+        성공: {style: (Image, None)}
+        실패: {style: (None, Exception)}
+    """
+    loop = asyncio.get_event_loop()
+    
+    async def generate_one_with_retry(style: str) -> Tuple[str, Optional[Image.Image], Optional[Exception]]:
+        """단일 스타일 생성 (재시도 포함)"""
+        for attempt in range(max_retries):
+            try:
+                print(f"🎨 [{style}] 생성 시작 (시도 {attempt + 1}/{max_retries})")
+                
+                # ThreadPoolExecutor를 사용하여 동기 함수를 비동기로 실행
+                img = await loop.run_in_executor(
+                    None,
+                    generate_styled_image,
+                    input_image,
+                    style
+                )
+                
+                print(f"✅ [{style}] 생성 완료")
+                return style, img, None
+                
+            except Exception as e:
+                print(f"❌ [{style}] 생성 실패 (시도 {attempt + 1}/{max_retries}): {str(e)[:100]}")
+                if attempt == max_retries - 1:
+                    # 마지막 시도 실패
+                    return style, None, e
+                # 재시도 전 잠시 대기
+                await asyncio.sleep(1)
+        
+        return style, None, Exception("알 수 없는 오류")
+    
+    # 모든 스타일 동시 생성
+    print(f"🚀 {len(style_types)}개 스타일 동시 생성 시작: {style_types}")
+    tasks = [generate_one_with_retry(style) for style in style_types]
+    results = await asyncio.gather(*tasks)
+    
+    # 결과를 딕셔너리로 변환
+    result_dict = {}
+    for style, img, error in results:
+        result_dict[style] = (img, error)
+    
+    # 통계 출력
+    success_count = sum(1 for img, err in result_dict.values() if img is not None)
+    print(f"📊 생성 완료: {success_count}/{len(style_types)} 성공")
+    
+    return result_dict
+
+
+def generate_multiple_styles_sync(
+    input_image: Image.Image, 
+    style_types: List[str],
+    max_retries: int = 3
+) -> Dict[str, Tuple[Optional[Image.Image], Optional[Exception]]]:
+    """
+    generate_multiple_styles_async의 동기 버전 (Streamlit에서 사용하기 쉽도록).
+    
+    Args:
+        input_image: 입력 이미지
+        style_types: 생성할 스타일 타입 리스트
+        max_retries: 실패 시 재시도 횟수
+    
+    Returns:
+        Dict[style_type, (generated_image or None, error or None)]
+    """
+    return asyncio.run(generate_multiple_styles_async(input_image, style_types, max_retries))

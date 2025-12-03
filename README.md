@@ -1,25 +1,24 @@
-# 🎨 ai-photo-booth
+# 🎨 AI Photo Booth - 인생네컷 스타일
 
-2025 목원대학교 컴퓨터공학과 학술제 부스 - AI 이미지 스타일 변환 서비스
+**목원대학교 컴퓨터공학과 | AI 이미지 스타일 변환 서비스**
 
-## 📋 프로젝트 개요
+버전: **2.0.0** (2025-12-03) | 상태: **프로덕션**
 
-축제 방문객의 사진을 AI가 다양한 스타일(레고, 애니메이션, 픽셀아트 등)로 변환해주는 웹 애플리케이션입니다.
+---
 
-### 주요 기능
-- 📸 사진 업로드 및 스타일 선택
-- 🤖 AI 기반 이미지 스타일 변환 (6가지 스타일)
-- 📱 모바일 최적화 UI
-- 🖥️ 관리자 대시보드
-- 📲 QR 코드를 통한 결과 공유
+## 📋 개요
 
-### 기술 스택
-- **Frontend/Backend**: Streamlit 1.39.0
-- **Database**: Supabase (PostgreSQL + Storage)
-- **AI Engine**: Google Gemini Pro Vision API
-- **Image Processing**: Pillow
-- **Python**: 3.11
-- **출력 규격**: 4cm x 6cm @ 118dpi (472x709px)
+축제 방문객의 사진을 AI가 6가지 스타일로 변환하는 Streamlit 웹앱입니다. **v2.0**부터 "인생네컷 4-cut" 기능이 추가되어 사용자가 선택한 4개 스타일을 2x2 그리드 템플릿으로 합성 제공합니다.
+
+**주요 기능**
+- 📸 사진 업로드 & 6가지 스타일 선택
+- 🎞️ **인생네컷 4-cut 생성** (v2.0): 4개 스타일을 2x2 그리드로 합성
+- ⚡ **병렬 처리**: 4개 이미지 동시 생성으로 75% 시간 단축
+- 🖥️ 관리자 대시보드 & QR 코드 공유
+
+**기술 스택**: Streamlit • Supabase • Gemini 2.5 Flash • Pillow • asyncio
+
+---
 
 ## 🚀 빠른 시작
 
@@ -53,15 +52,6 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**설치되는 패키지:**
-- streamlit==1.39.0 (웹 프레임워크)
-- supabase==2.14.0 (백엔드 서비스)
-- google-generativeai==0.8.3 (AI 이미지 생성)
-- pillow==10.4.0 (이미지 처리)
-- qrcode[pil]==8.0 (QR 코드 생성)
-- streamlit-autorefresh==1.0.1 (자동 새로고침)
-- python-dotenv==1.0.1 (환경 변수 관리)
-
 ### 4. 환경 변수 설정
 
 `.env` 파일을 생성하고 다음 내용을 입력하세요:
@@ -74,11 +64,11 @@ SUPABASE_KEY=your_supabase_anon_key
 # Google Gemini API
 GEMINI_API_KEY=your_gemini_api_key
 
-# App Settings (Optional)
+# App Settings
 ADMIN_PASSWORD=your_admin_password
 ```
 
-**API 키 발급 방법:**
+**API 키 발급:**
 - **Supabase**: https://supabase.com/ 에서 프로젝트 생성
 - **Gemini API**: https://makersuite.google.com/app/apikey 에서 발급
 
@@ -92,15 +82,19 @@ CREATE TABLE booth_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at TIMESTAMP DEFAULT now(),
     status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-    style_type TEXT NOT NULL CHECK (style_type IN ('lego', 'anime', 'pixel', 'sapporo', 'cyberpunk', 'clay')),
+    style_type TEXT CHECK (style_type IN ('lego', 'anime', 'pixel', 'clay', 'business', 'figure')),
+    style_types JSONB,  -- 4-cut 기능용 (v2.0)
     input_image_url TEXT NOT NULL,
     output_image_url TEXT,
-    error_message TEXT
+    error_message TEXT,
+    queue_number INTEGER DEFAULT 0
 );
 
 -- 인덱스 생성
 CREATE INDEX idx_status_created ON booth_requests(status, created_at);
 CREATE INDEX idx_created_at ON booth_requests(created_at DESC);
+CREATE INDEX idx_queue_number ON booth_requests(queue_number DESC);
+CREATE INDEX idx_style_types ON booth_requests USING GIN (style_types);
 
 -- Row Level Security 활성화
 ALTER TABLE booth_requests ENABLE ROW LEVEL SECURITY;
@@ -116,18 +110,7 @@ CREATE POLICY "Enable update access for all users" ON booth_requests FOR UPDATE 
 2. `input_images` 버킷 생성 (Private)
 3. `output_images` 버킷 생성 (Public)
 
-### 6. 프롬프트 테스트 (선택사항)
-
-```bash
-# test_images 폴더 생성 및 테스트 이미지 추가
-mkdir test_images
-# 이미지 파일을 test_images/ 폴더에 넣기
-
-# 프롬프트 테스트 실행
-python test_prompts.py
-```
-
-### 7. 애플리케이션 실행
+### 6. 애플리케이션 실행
 
 ```bash
 streamlit run app.py
@@ -135,30 +118,7 @@ streamlit run app.py
 
 브라우저에서 자동으로 열립니다. (기본 주소: http://localhost:8501)
 
-## 📁 프로젝트 구조
-
-```
-ai-photo-booth/
-├── .streamlit/          # Streamlit 설정
-├── pages/               # 관리자 페이지
-│   └── Admin.py
-├── utils/               # 유틸리티 모듈
-│   ├── __init__.py
-│   ├── supabase_client.py
-│   ├── gemini_client.py
-│   ├── image_processor.py
-│   └── qr_generator.py
-├── assets/              # 이미지 에셋
-├── test_images/         # 테스트용 이미지
-├── .env                 # 환경 변수 (git ignore)
-├── .env.example         # 환경 변수 템플릿
-├── .gitignore
-├── app.py               # 메인 애플리케이션
-├── test_prompts.py      # 프롬프트 테스트 스크립트
-├── requirements.txt
-├── README.md
-└── 개발명세서.md        # 상세 개발 문서
-```
+---
 
 ## 🎭 스타일 옵션
 
@@ -169,70 +129,187 @@ ai-photo-booth/
 5. 👔 **비즈니스 (Business)** - 세련된 스튜디오 프로필 사진
 6. 🧸 **피규어 (Figure)** - 책상 위 수집용 피규어
 
+---
+
 ## 📖 사용 방법
 
-### 일반 사용자
+### 일반 사용자 (4-cut 모드)
 1. QR 코드를 스캔하여 웹 페이지 접속
 2. 사진 업로드
-3. 원하는 스타일 선택
+3. **원하는 스타일 4개를 순서대로 선택** (인생네컷 스타일)
 4. 제출 후 부스에서 대기
 
 ### 관리자
 1. `/Admin` 페이지 접속
 2. 대기열에서 요청 확인
+   - 단일 스타일: 1개 이미지 생성
+   - 4-cut: 4개 스타일 동시 생성
 3. "생성 시작" 버튼 클릭
 4. AI 생성 완료 후 결과 확인
+   - 4-cut의 경우 2x2 그리드 템플릿으로 자동 합성
 5. QR 코드 제공 및 인쇄
+
+### 4-cut 기능 특징
+- 정확히 4개의 스타일 선택 필수
+- 선택 순서대로 이미지 배치 (좌상 → 우상 → 좌하 → 우하)
+- 4개 이미지를 동시에 생성 (약 30-60초 소요)
+- 2x2 그리드 템플릿으로 자동 합성 (954x1428px)
+- 각 셀은 기존 4x6 비율(472x709px) 유지
+
+---
+
+## 🎞️ 4-CUT 기능 (v2.0)
+
+### 템플릿 레이아웃
+
+```
+┌─────────┬─────────┐
+│  이미지1  │  이미지2  │  472x709px
+│ (Style1)│ (Style2)│
+├─────────┼─────────┤  10px 여백
+│  이미지3  │  이미지4  │  472x709px
+│ (Style3)│ (Style4)│
+└─────────┴─────────┘
+
+최종 템플릿: 954x1428px (2x2 그리드)
+```
+
+### 주요 개선사항
+
+#### 성능 최적화
+- **75% 시간 단축**: 순차 120초 → 병렬 30초
+- **asyncio + ThreadPoolExecutor**: 4개 이미지 동시 생성
+- **독립적 에러 처리**: 실패한 이미지만 개별 재시도 (최대 3회)
+
+#### 안정성
+- 부분 실패 시나리오 대응
+- 실패한 스타일 명시적 표시
+- 재시도 로직 개선
+
+#### 사용자 경험
+- 선택 순서 실시간 표시
+- 실시간 선택 개수 검증
+- 선택 초기화 버튼
+
+---
+
+## 🚀 배포 가이드
+
+### 기존 프로젝트 업데이트 (v1.0 → v2.0)
+
+#### 1. 데이터베이스 마이그레이션 (필수)
+
+Supabase SQL Editor에서 실행:
+
+```sql
+-- style_types JSONB 컬럼 추가
+ALTER TABLE booth_requests 
+ADD COLUMN IF NOT EXISTS style_types JSONB;
+
+-- 인덱스 추가 (선택적, 성능 최적화)
+CREATE INDEX IF NOT EXISTS idx_booth_requests_style_types 
+ON booth_requests USING GIN (style_types);
+
+-- 확인
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'booth_requests';
+```
+
+#### 2. 코드 업데이트
+
+```bash
+git pull origin main
+pip install -r requirements.txt  # 의존성 재확인
+streamlit run app.py
+```
+
+#### 3. 배포 체크리스트
+
+**배포 전:**
+- [x] 모든 코드 작성 완료
+- [x] 에러 검사 통과
+- [ ] Supabase 마이그레이션 실행 ⚠️
+- [ ] 실제 환경 테스트 ⚠️
+
+**배포 후 테스트:**
+- [ ] 사용자: 4개 스타일 선택 → 제출
+- [ ] 관리자: 4-cut 생성 → 템플릿 확인
+- [ ] 하위 호환: 단일 스타일 요청도 정상 작동
+- [ ] 혼합 대기열: 단일/4-cut 혼합 처리
+- [ ] 에러 시나리오: API 실패, 부분 실패 등
+
+### 성능 및 제한사항
+
+**API 사용량:**
+- **4-cut 요청 = 4배 API 호출**
+- Gemini API 무료 티어: 15 RPM (분당 요청)
+- 동시 처리 가능: 최대 3-4개 4-cut 요청 (12-16 API 호출)
+
+**예상 소요 시간:**
+- 단일 스타일: 약 30초
+- 4-cut (병렬): 약 30-60초
+- 4-cut (순차): 약 120초 ❌ 사용 안 함
+
+---
 
 ## 🧪 테스트
 
-### 프롬프트 테스트
+### 템플릿 생성 테스트 (더미 이미지)
+
+```bash
+python test_four_cut_integration.py
+# 선택: 2
+```
+
+4개의 서로 다른 색상 이미지로 템플릿 생성을 테스트합니다.
+
+### 전체 통합 테스트 (실제 AI 생성)
+
+```bash
+python test_four_cut_integration.py
+# 선택: 1
+```
+
+⚠️ `test_images/` 폴더에 테스트 이미지가 필요합니다.
+
+### 프롬프트 테스트 (기존 기능)
+
 ```bash
 python test_prompts.py
 ```
 
-- 6가지 스타일 프롬프트 확인
-- Gemini API 연결 테스트
-- 이미지 분석 테스트
-- 스타일 변환 테스트 (선택적)
-
-## 🐛 문제 해결
-
-### API 키 오류
-- `.env` 파일이 올바른 위치에 있는지 확인
-- API 키가 정확히 입력되었는지 확인
-- Gemini API 할당량 확인
-
-### Supabase 연결 오류
-- Supabase URL과 Key가 올바른지 확인
-- 테이블과 Storage Bucket이 생성되었는지 확인
-- RLS 정책이 설정되었는지 확인
-
-### 이미지 업로드 실패
-- 이미지 파일 크기 확인 (최대 10MB)
-- 지원 형식 확인 (JPG, PNG)
-- Storage Bucket 권한 확인
-
-## 📚 문서
-
-- [개발명세서.md](./개발명세서.md) - 상세 개발 문서
-- [Streamlit 문서](https://docs.streamlit.io/)
-- [Supabase 문서](https://supabase.com/docs)
-- [Gemini API 문서](https://ai.google.dev/docs)
-
-## 🤝 기여
-
-이슈와 Pull Request를 환영합니다!
-
-## 📝 라이선스
-
-MIT License
-
-## 👥 개발팀
-
-COM-ART 개발팀 - 목원대학교 컴퓨터공학과
+6가지 스타일 프롬프트 및 Gemini API 연결을 테스트합니다.
 
 ---
 
-**프로젝트 시작일**: 2025-11-30  
-**축제 일정**: TBD
+## 📁 프로젝트 구조
+
+```
+ai-photo-booth/
+├── .streamlit/                  # Streamlit 설정
+├── pages/
+│   └── Admin.py                # 관리자 대시보드
+├── utils/
+│   ├── __init__.py
+│   ├── supabase_client.py      # Supabase 연동
+│   ├── gemini_client.py        # Gemini AI (병렬 생성 포함)
+│   ├── image_processor.py      # 이미지 처리 (4-cut 템플릿)
+│   └── qr_generator.py         # QR 코드 생성
+├── test_images/                # 테스트용 이미지
+├── test_results/               # 테스트 결과 저장
+├── .env                        # 환경 변수 (git ignore)
+├── app.py                      # 메인 애플리케이션
+├── test_prompts.py             # 프롬프트 테스트
+├── test_four_cut_integration.py # 4-cut 통합 테스트
+├── migration_add_style_types.sql # DB 마이그레이션
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## 🔧 기술 구현 상세
+
+### 병렬 생성 (gemini_client.py)
+

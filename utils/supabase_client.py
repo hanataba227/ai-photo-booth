@@ -60,10 +60,18 @@ def get_image_url(bucket_name: str, file_path: str) -> str:
         print(f"URL 가져오기 오류: {e}")
         return None
 
-def create_booth_request(style_type: str, input_image_path: str) -> dict:
+def create_booth_request(style_type=None, input_image_path: str = None, style_types: list = None) -> dict:
     """
     booth_requests 테이블에 새 레코드를 생성합니다.
     순번(queue_number)을 자동으로 할당합니다.
+    
+    Args:
+        style_type: 단일 스타일 (하위 호환성)
+        style_types: 4개 스타일 배열 (4-cut 기능용)
+        input_image_path: 입력 이미지 경로
+    
+    Returns:
+        생성된 레코드
     """
     try:
         # 현재 최대 순번 조회 (오늘 날짜 기준 또는 전체)
@@ -79,11 +87,22 @@ def create_booth_request(style_type: str, input_image_path: str) -> dict:
             next_number = response.data[0]["queue_number"] + 1
         
         data = {
-            "style_type": style_type,
             "input_image_url": input_image_path,
             "status": "pending",
             "queue_number": next_number
         }
+        
+        # 하위 호환성: style_type과 style_types 모두 지원
+        if style_types:
+            # 4-cut 모드: style_types 배열 저장
+            data["style_types"] = style_types
+            # 첫 번째 스타일을 style_type에도 저장 (하위 호환성)
+            data["style_type"] = style_types[0] if style_types else None
+        elif style_type:
+            # 기존 단일 스타일 모드
+            data["style_type"] = style_type
+            # style_types는 null로 유지
+        
         response = supabase.table("booth_requests").insert(data).execute()
         if response.data:
             return response.data[0]
@@ -100,6 +119,21 @@ def get_pending_requests():
         response = supabase.table("booth_requests")\
             .select("*")\
             .eq("status", "pending")\
+            .order("created_at", desc=False)\
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"조회 오류: {e}")
+        return []
+
+def get_all_active_requests():
+    """
+    삭제되지 않은 모든 요청(pending, processing, completed)을 생성 시간순으로 가져옵니다.
+    """
+    try:
+        response = supabase.table("booth_requests")\
+            .select("*")\
+            .in_("status", ["pending", "processing", "completed"])\
             .order("created_at", desc=False)\
             .execute()
         return response.data
