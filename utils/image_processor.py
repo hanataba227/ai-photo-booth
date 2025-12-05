@@ -18,11 +18,14 @@ def validate_image(file) -> bool:
         # 파일 포인터 초기화
         file.seek(0)
         img = Image.open(file)
+        
+        # 형식 확인 (EXIF 처리 전에)
+        if img.format not in ['JPEG', 'PNG']:
+            return False
+        
         # EXIF 회전 정보 자동 적용
         img = ImageOps.exif_transpose(img)
-        
-        # 형식 확인
-        if img.format not in ['JPEG', 'PNG']:
+        if img is None:
             return False
             
         # 크기 확인 (선택 사항, 예: 최소 400x400)
