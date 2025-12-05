@@ -9,10 +9,25 @@ load_dotenv()
 # Gemini API 설정
 def configure_gemini():
     api_key = os.getenv("GEMINI_API_KEY")
+    
+    # Streamlit secrets에서 로드 시도
+    if not api_key:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and "gemini" in st.secrets:
+                api_key = st.secrets["gemini"]["api_key"]
+        except:
+            pass
+    
     if not api_key:
         raise ValueError("Gemini API Key가 누락되었습니다. .env 파일을 확인하세요.")
     
-    genai.configure(api_key=api_key)
+    # API 키로만 인증 (메타데이터 서버 사용 안 함)
+    genai.configure(
+        api_key=api_key,
+        transport='rest',  # REST API 사용 강제
+        client_options={"api_endpoint": "generativelanguage.googleapis.com"}
+    )
     return True
 
 # 초기 설정
