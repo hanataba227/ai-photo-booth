@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageOps
 import io
 
 # 4x6cm @ 118dpi 상수
@@ -17,6 +17,9 @@ def validate_image(file) -> bool:
         
         # 파일 포인터 초기화
         file.seek(0)
+        img = Image.open(file)
+        # EXIF 회전 정보 자동 적용
+        img = ImageOps.exif_transpose(img)
         
         # 형식 확인
         if img.format not in ['JPEG', 'PNG']:

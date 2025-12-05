@@ -129,8 +129,11 @@ with col1:
                         # 완료된 요청인 경우 결과를 바로 로드
                         if status == 'completed' and req.get('output_image_url'):
                             try:
+                                from PIL import ImageOps
                                 output_data = download_image("output_images", req['output_image_url'])
                                 output_image = Image.open(io.BytesIO(output_data))
+                                # EXIF 회전 정보 자동 적용
+                                output_image = ImageOps.exif_transpose(output_image) if output_image else output_image
                                 is_four_cut = req.get('style_types') is not None and isinstance(req['style_types'], list)
                                 st.session_state.generated_result = {
                                     "image": output_image,
@@ -165,8 +168,11 @@ with col2:
         # 1. 원본 이미지 로드
         try:
             with st.spinner("원본 이미지를 다운로드 중입니다..."):
+                from PIL import ImageOps
                 img_data = download_image("input_images", req['input_image_url'])
                 original_image = Image.open(io.BytesIO(img_data))
+                # EXIF 회전 정보 자동 적용
+                original_image = ImageOps.exif_transpose(original_image) if original_image else original_image
                 
             c1, c2 = st.columns(2)
             with c1:
